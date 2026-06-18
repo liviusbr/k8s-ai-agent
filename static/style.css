@@ -292,6 +292,28 @@ tbody tr:hover { background: var(--surface-2); }
   margin-bottom: 8px;
 }
 
+.action-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-bottom: 8px;
+  margin-left: 6px;
+}
+.action-badge.action-delete { color: var(--danger); background: var(--danger-dim); }
+.action-badge.action-scale { color: var(--pending); background: var(--pending-dim); }
+.action-badge.action-restart { color: var(--info); background: rgba(94, 200, 232, 0.1); }
+
+.action-summary {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+}
+
 .yaml-toggle {
   background: none;
   border: none;
@@ -326,6 +348,7 @@ pre.yaml-block {
   cursor: pointer;
 }
 .btn-apply { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.btn-apply.btn-danger { background: var(--danger-dim); border-color: var(--danger); color: var(--danger); }
 .btn-discard { background: transparent; color: var(--text-dim); }
 .btn-apply:disabled, .btn-discard:disabled { opacity: 0.5; cursor: default; }
 

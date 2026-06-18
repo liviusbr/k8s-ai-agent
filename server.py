@@ -74,7 +74,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import k8s_client as k8s
-from claude_agent import generate_manifest
+from claude_agent import interpret_request
 
 load_dotenv()
 
@@ -98,6 +98,15 @@ class ApplyRequest(BaseModel):
     namespace: str
     context: str | None = None
     description: str | None = None
+
+
+class ActionRequest(BaseModel):
+    action: str
+    kind: str
+    name: str
+    namespace: str
+    replicas: int | None = None
+    context: str | None = None
 
 
 # ----------------------------------------------------------- static UI -----
@@ -199,13 +208,30 @@ def api_cluster(context: str | None = None):
 
 @app.post("/api/generate")
 def api_generate(req: GenerateRequest):
-    result = generate_manifest(req.message)
+    result = interpret_request(req.message)
     if not result.ok:
         return {
             "ok": False,
-            "error": result.error or result.explanation or "Could not generate a manifest for that request.",
+            "error": result.error or result.explanation or "Could not interpret that request.",
         }
-    return {"ok": True, "namespace": result.namespace, "yaml": result.yaml_text, "explanation": result.explanation}
+    if result.kind == "action":
+        return {
+            "ok": True,
+            "kind": "action",
+            "action": result.action,
+            "resource_kind": result.resource_kind,
+            "name": result.name,
+            "namespace": result.namespace,
+            "replicas": result.replicas,
+            "explanation": result.explanation,
+        }
+    return {
+        "ok": True,
+        "kind": "manifest",
+        "namespace": result.namespace,
+        "yaml": result.yaml_text,
+        "explanation": result.explanation,
+    }
 
 
 # ------------------------------------------------------------ apply flow ---
@@ -243,6 +269,41 @@ def api_apply(req: ApplyRequest):
         "stderr": apply_res.stderr,
         "file": filename,
         "command": apply_res.command,
+    }
+
+
+# ----------------------------------------------------------- action flow ---
+
+@app.post("/api/action")
+def api_action(req: ActionRequest):
+    # Defense in depth, same as in claude_agent.py: never trust the request
+    # body's claim that it stayed inside bounds. This endpoint enforces the
+    # same allow-lists independently, so even a malformed or tampered
+    # request from the frontend can't reach kubectl with something outside
+    # the small set of actions/kinds this tool is willing to run.
+    if req.action not in k8s.ALLOWED_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Action '{req.action}' is not allowed. Allowed: {sorted(k8s.ALLOWED_ACTIONS)}")
+    if req.kind not in k8s.ALLOWED_RESOURCE_KINDS:
+        raise HTTPException(status_code=400, detail=f"Resource kind '{req.kind}' is not allowed. Allowed: {sorted(k8s.ALLOWED_RESOURCE_KINDS)}")
+    if not k8s.is_valid_k8s_name(req.name) or not k8s.is_valid_k8s_name(req.namespace):
+        raise HTTPException(status_code=400, detail="Resource name or namespace doesn't look like a valid Kubernetes name.")
+
+    if req.action == "delete":
+        res = k8s.delete_resource(req.kind, req.name, req.namespace, req.context)
+    elif req.action == "scale":
+        if req.replicas is None or req.replicas < 0:
+            raise HTTPException(status_code=400, detail="A 'scale' action needs a non-negative integer replica count.")
+        res = k8s.scale_resource(req.kind, req.name, req.namespace, req.replicas, req.context)
+    elif req.action == "restart":
+        res = k8s.restart_resource(req.kind, req.name, req.namespace, req.context)
+    else:  # unreachable given the allow-list check above, but never silently fall through
+        raise HTTPException(status_code=400, detail=f"Unhandled action '{req.action}'.")
+
+    return {
+        "ok": res.success,
+        "message": res.stdout if res.success else f"kubectl {req.action} failed.",
+        "stderr": res.stderr,
+        "command": res.command,
     }
 
 

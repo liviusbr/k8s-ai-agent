@@ -1,9 +1,12 @@
 # K8s AI Agent
 
 Describe what you want in plain English — *"deploy nginx with 3 replicas in
-the test namespace"* — and the agent generates the Kubernetes manifest,
-creates the namespace if needed, and applies it once you confirm. A live
-dashboard shows what's actually running in the cluster.
+the test namespace"* or *"delete the nginx deployment in test"* or *"scale
+nginx to 5 replicas"* — and the agent figures out whether that's something
+to create (generates a manifest, creates the namespace if needed, applies
+it) or something to act on directly (delete/scale/restart an existing
+resource), and waits for you to confirm either way. A live dashboard shows
+what's actually running in the cluster.
 
 Built with **FastAPI** + the **Claude API** (Anthropic) + vanilla
 HTML/CSS/JS, talking to your cluster through `kubectl`.
@@ -72,6 +75,27 @@ Request flow:
 4. **Manifests** drawer lists every saved file; **Delete** runs
    `kubectl delete -f <file>` and only removes the file from disk if that
    actually succeeded.
+
+### Deleting, scaling, restarting — the action path
+
+Not every request fits the "generate a manifest" shape — "delete the nginx
+deployment" isn't a YAML object you can apply. For these, Claude responds
+with a small structured action instead (`{"type": "action", "action":
+"delete", "kind": "deployment", "name": "nginx", "namespace": "test"}`)
+rather than YAML, and the dashboard shows a confirm card for that specific
+command instead of an Apply/Discard manifest card.
+
+Two allow-lists in `k8s_client.py` keep this tightly scoped on purpose —
+`ALLOWED_ACTIONS` (`delete`, `scale`, `restart`) and `ALLOWED_RESOURCE_KINDS`
+(common namespaced workloads: deployments, statefulsets, services, pods,
+configmaps, etc.). Cluster-scoped or higher-blast-radius kinds — namespaces,
+nodes, ClusterRoles — are deliberately left out; deleting an entire
+namespace cascades to everything in it, which is a different risk tier than
+removing one Deployment. Both `claude_agent.py` and `server.py` check
+against these lists independently (defense in depth — even a tampered
+frontend request can't reach `kubectl` with something outside them), and
+resource names are validated against Kubernetes' own naming rules before
+ever reaching a subprocess call.
 
 Multi-cluster: the context dropdown is populated from
 `kubectl config get-contexts`, and every `kubectl` call (apply, delete,

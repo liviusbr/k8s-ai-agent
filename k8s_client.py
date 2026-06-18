@@ -10,10 +10,41 @@ guess about what probably happened.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 
 KUBECTL_TIMEOUT = 20  # seconds — generous enough for a slower remote cluster
+
+# Deliberately narrow allow-lists for anything the agent can act on
+# imperatively (delete/scale/restart) without a manifest in between.
+# Cluster-scoped or security-sensitive kinds (namespace, node, clusterrole,
+# persistentvolume, etc.) are intentionally excluded — those carry a much
+# bigger blast radius than "remove one Deployment" and aren't worth handing
+# to an LLM-driven confirm button. Extend this list deliberately, not by
+# trusting whatever Claude happens to propose.
+ALLOWED_RESOURCE_KINDS = {
+    "deployment",
+    "statefulset",
+    "daemonset",
+    "replicaset",
+    "service",
+    "pod",
+    "configmap",
+    "secret",
+    "job",
+    "ingress",
+}
+
+ALLOWED_ACTIONS = {"delete", "scale", "restart"}
+
+# Permissive RFC1123-ish check — good enough to catch a malformed name
+# before it ever reaches a subprocess call, not meant to be a full spec.
+_VALID_NAME = re.compile(r"^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$")
+
+
+def is_valid_k8s_name(value: str) -> bool:
+    return bool(value) and len(value) <= 253 and bool(_VALID_NAME.match(value))
 
 
 @dataclass
@@ -83,6 +114,21 @@ def dry_run_apply(filepath: str, context: str | None) -> KubectlResult:
 
 def delete_manifest(filepath: str, context: str | None) -> KubectlResult:
     return run_kubectl(["delete", "-f", filepath], context)
+
+
+def delete_resource(kind: str, name: str, namespace: str, context: str | None) -> KubectlResult:
+    return run_kubectl(["delete", kind, name, "-n", namespace], context)
+
+
+def scale_resource(kind: str, name: str, namespace: str, replicas: int, context: str | None) -> KubectlResult:
+    return run_kubectl(["scale", kind, name, f"--replicas={replicas}", "-n", namespace], context)
+
+
+def restart_resource(kind: str, name: str, namespace: str, context: str | None) -> KubectlResult:
+    # rollout restart only applies to controller kinds — kubectl itself will
+    # give an honest error if pointed at something like a bare pod or service,
+    # which is exactly the behavior we want rather than masking it here.
+    return run_kubectl(["rollout", "restart", f"{kind}/{name}", "-n", namespace], context)
 
 
 def get_json(

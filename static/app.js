@@ -255,6 +255,78 @@ function addManifestCard({ namespace, yamlText, explanation }) {
   scrollChatToBottom();
 }
 
+function describeAction({ action, resourceKind, name, namespace, replicas }) {
+  if (action === "delete") return `Delete ${resourceKind} "${name}" in namespace "${namespace}"`;
+  if (action === "scale") return `Scale ${resourceKind} "${name}" in namespace "${namespace}" to ${replicas} replica${replicas === 1 ? "" : "s"}`;
+  if (action === "restart") return `Restart ${resourceKind} "${name}" in namespace "${namespace}"`;
+  return `${action} ${resourceKind} "${name}" in namespace "${namespace}"`;
+}
+
+function addActionCard({ action, resourceKind, name, namespace, replicas, explanation }) {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  const summary = describeAction({ action, resourceKind, name, namespace, replicas });
+  const buttonLabel = action === "delete" ? "Delete" : action === "scale" ? "Scale" : "Restart";
+
+  wrap.innerHTML = `
+    <div class="card-body">
+      <span class="ns-badge">ns/${escapeHtml(namespace)}</span>
+      <span class="action-badge action-${escapeHtml(action)}">${escapeHtml(action)}</span>
+      <p class="explanation">${escapeHtml(explanation || summary)}</p>
+      <p class="action-summary">${escapeHtml(summary)}</p>
+      <div class="card-actions">
+        <button class="btn-apply ${action === "delete" ? "btn-danger" : ""}">${buttonLabel}</button>
+        <button class="btn-discard">Discard</button>
+      </div>
+      <div class="result-line"></div>
+    </div>
+  `;
+
+  const applyBtn = wrap.querySelector(".btn-apply");
+  const discardBtn = wrap.querySelector(".btn-discard");
+  const resultLine = wrap.querySelector(".result-line");
+
+  applyBtn.addEventListener("click", async () => {
+    applyBtn.disabled = true;
+    discardBtn.disabled = true;
+    resultLine.textContent = "running...";
+    resultLine.className = "result-line";
+    try {
+      const res = await api("/api/action", {
+        method: "POST",
+        body: JSON.stringify({ action, kind: resourceKind, name, namespace, replicas, context: state.context }),
+      });
+      if (res.ok) {
+        wrap.classList.add("success");
+        resultLine.className = "result-line ok";
+        resultLine.textContent = `✓ ${res.message || "done"}`;
+        loadCluster();
+      } else {
+        wrap.classList.add("error");
+        resultLine.className = "result-line bad";
+        resultLine.textContent = `✗ ${res.message}${res.stderr ? "\n" + res.stderr : ""}`;
+        applyBtn.disabled = false;
+        discardBtn.disabled = false;
+      }
+    } catch (e) {
+      wrap.classList.add("error");
+      resultLine.className = "result-line bad";
+      resultLine.textContent = `✗ ${e.message}`;
+      applyBtn.disabled = false;
+      discardBtn.disabled = false;
+    }
+  });
+
+  discardBtn.addEventListener("click", () => {
+    applyBtn.disabled = true;
+    discardBtn.disabled = true;
+    resultLine.textContent = "discarded — nothing was sent to the cluster.";
+  });
+
+  els.chatScroll.appendChild(wrap);
+  scrollChatToBottom();
+}
+
 els.chatForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = els.chatInput.value.trim();
@@ -274,9 +346,20 @@ els.chatForm.addEventListener("submit", async (e) => {
     });
     thinkingNote.remove();
     if (res.ok) {
-      addManifestCard({ namespace: res.namespace, yamlText: res.yaml, explanation: res.explanation });
+      if (res.kind === "action") {
+        addActionCard({
+          action: res.action,
+          resourceKind: res.resource_kind,
+          name: res.name,
+          namespace: res.namespace,
+          replicas: res.replicas,
+          explanation: res.explanation,
+        });
+      } else {
+        addManifestCard({ namespace: res.namespace, yamlText: res.yaml, explanation: res.explanation });
+      }
     } else {
-      addSystemNote(`Couldn't generate a manifest: ${res.error}`);
+      addSystemNote(`Couldn't interpret that request: ${res.error}`);
     }
   } catch (err) {
     thinkingNote.remove();

@@ -23,6 +23,21 @@ const els = {
   manifestList: document.getElementById("manifestList"),
 };
 
+function formatErrorDetail(detail) {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI/pydantic validation errors look like [{loc:[...], msg:"...", type:"..."}, ...]
+    return detail
+      .map((d) => (d && d.msg ? `${(d.loc || []).join(".")}: ${d.msg}` : JSON.stringify(d)))
+      .join("; ");
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch (_) {
+    return String(detail);
+  }
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -31,7 +46,7 @@ async function api(path, options = {}) {
   let body = null;
   try { body = await res.json(); } catch (_) { /* no body */ }
   if (!res.ok) {
-    const detail = body && body.detail ? body.detail : res.statusText;
+    const detail = body && body.detail ? formatErrorDetail(body.detail) : res.statusText;
     throw new Error(detail);
   }
   return body;

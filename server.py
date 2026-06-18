@@ -68,7 +68,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -84,6 +84,18 @@ MANIFEST_DIR.mkdir(exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="K8s AI Agent")
+
+
+@app.middleware("http")
+async def no_cache_for_static(request: Request, call_next):
+    # This is a local dev tool, not a production site fronted by a CDN —
+    # the file you just edited should show up on the next refresh, not
+    # require a manual hard-reload because the browser cached app.js from
+    # ten minutes ago. Cheap insurance against a confusing class of bug.
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ---------------------------------------------------------------- models ----

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s AI Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">&gt;_</span>
+      <span class="brand-name">K8s AI Agent</span>
+    </div>
+    <div class="topbar-right">
+      <div class="context-picker">
+        <span class="status-dot checking" id="statusDot" title="cluster status"></span>
+        <select id="contextSelect" aria-label="kubeconfig context"></select>
+      </div>
+      <button id="manifestsBtn" class="btn-ghost">Manifests</button>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <section class="panel cluster-panel">
+      <div class="panel-header">
+        <h2>Live cluster</h2>
+        <button id="refreshBtn" class="btn-ghost small">Refresh</button>
+      </div>
+
+      <div class="stat-row" id="statRow"></div>
+
+      <div class="tabs" id="resourceTabs">
+        <button class="tab active" data-tab="pods">Pods</button>
+        <button class="tab" data-tab="deployments">Deployments</button>
+        <button class="tab" data-tab="services">Services</button>
+        <button class="tab" data-tab="namespaces">Namespaces</button>
+      </div>
+
+      <div class="table-wrap">
+        <table id="resourceTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty-state" id="clusterEmpty" hidden>Nothing here yet — ask the agent to create something.</p>
+        <p class="error-state" id="clusterError" hidden></p>
+      </div>
+    </section>
+
+    <section class="panel chat-panel">
+      <div class="panel-header">
+        <h2>Agent</h2>
+        <span class="hint">plain English in, manifest out</span>
+      </div>
+
+      <div class="chat-scroll" id="chatScroll">
+        <div class="msg system">
+          <p>Tell me what to deploy — e.g. <code>deploy nginx with 3 replicas in the test namespace</code>. I'll generate the manifest and wait for your OK before touching the cluster.</p>
+        </div>
+      </div>
+
+      <form id="chatForm" class="chat-input">
+        <span class="prompt-mark">&gt;</span>
+        <textarea id="chatInput" rows="1" placeholder="deploy redis in the cache namespace..." required></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </section>
+
+  </main>
+</div>
+
+<div class="drawer-overlay" id="drawerOverlay" hidden></div>
+<aside class="drawer" id="manifestDrawer">
+  <div class="drawer-header">
+    <h2>Saved manifests</h2>
+    <button id="closeDrawer" class="btn-ghost small">Close</button>
+  </div>
+  <div class="drawer-body" id="manifestList"></div>
+</aside>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
